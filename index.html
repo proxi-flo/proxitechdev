@@ -199,7 +199,7 @@ const TYPES=[["Café / boissons chaudes","cafe"],["Snacks","snack"],["Boissons f
 
 /* ---------- étapes du formulaire ---------- */
 const STEPS=[
- {id:"photosAvant",eyebrow:"À votre arrivée",q:"Commencez par photographier la panne",help:"Avant de toucher à la machine : l'écran, le code erreur, la pièce en cause… Pas de photo ? Passez simplement cette étape.",photoKey:"photosAvant"},
+ {id:"photosAvant",eyebrow:"À votre arrivée",q:"Commencez par photographier la panne",help:"Avant de toucher à la machine : l'écran, le code erreur, la pièce en cause… Sans personne ni nom de client sur la photo. Pas de photo ? Passez simplement cette étape.",photoKey:"photosAvant"},
  {id:"type",eyebrow:"La machine",q:"Sur quel type de machine ?",req:true},
  {id:"machine",eyebrow:"La machine",q:"Quelle marque et quel modèle ?",req:true},
  {id:"titre",eyebrow:"La panne",q:"Comment appelleriez-vous cette panne ?",help:"En quelques mots. Ex. : « Gobelet vide alors que le café coule »",kind:"input",req:true},
@@ -267,7 +267,7 @@ function render(){
 }
 
 function renderName(app){
-  app.innerHTML='<section class="screen"><p class="eyebrow">Bienvenue</p><h1 class="q">Comment vous appelez-vous ?</h1><p class="help">Votre nom sera ajouté à vos fiches. On ne vous le demandera qu\'une fois.</p><input class="field" id="nameIn" type="text" autocomplete="name" placeholder="Prénom Nom" value="'+esc(store.get("ptd_nom",""))+'"></section>';
+  app.innerHTML='<section class="screen"><p class="eyebrow">Bienvenue</p><h1 class="q">Votre prénom ou un pseudo ?</h1><p class="help">Il sera ajouté à vos fiches. Pas de nom de famille. On ne vous le demandera qu\'une fois.</p><input class="field" id="nameIn" type="text" autocomplete="off" maxlength="30" placeholder="Ex. Jean ou Tech31" value="'+esc(store.get("ptd_nom",""))+'"></section>';
   chrome({main:"C'est parti",disabled:!$("nameIn").value.trim()});
   $("nameIn").oninput=e=>{$("mainBtn").disabled=!e.target.value.trim()};
   $("mainBtn").onclick=()=>{const v=$("nameIn").value.trim();if(!v)return;store.set("ptd_nom",v);view="home";render()};
@@ -293,7 +293,7 @@ function renderHome(app){
    '<div class="listtitle">Mes pannes déjà déclarées <small>'+hist.length+'</small></div>'+
    (hist.length?'<div id="histList"></div>':'<div class="empty">Vos pannes déclarées apparaîtront ici.<br>Merci de partager votre savoir-faire !</div>')+
    '<div class="brandfoot"><img src="logo.png" alt="ProxiPause et Buenavita"><div>ProxiPause, le réseau qui a du goût</div></div>'+
-   '<p style="text-align:center;margin-top:8px"><button class="textbtn" id="renameBtn">Changer de nom ('+esc(nom)+')</button></p>'+
+   '<p style="text-align:center;margin-top:8px"><button class="textbtn" id="renameBtn">Changer de prénom ('+esc(nom)+')</button></p>'+
   '</section>';
   chrome({});
   $("startBtn").onclick=()=>{f=blank();idx=0;returnToRecap=false;view="form";render()};
