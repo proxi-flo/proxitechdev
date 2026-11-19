@@ -1,0 +1,15 @@
+{
+  "name": "ProxiTechDev – Recueil de pannes",
+  "short_name": "ProxiTechDev",
+  "description": "Recueil des cas pratiques de pannes types par les techniciens ProxiPause",
+  "lang": "fr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f2ec",
+  "theme_color": "#82b550",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
