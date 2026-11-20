@@ -143,6 +143,8 @@ textarea.field{min-height:150px;resize:none;line-height:1.45}
 .complete .search{margin:14px 0 0}
 .addph{display:flex;align-items:center;gap:2px;background:var(--green-soft);color:var(--green-dark);border-radius:999px;padding:6px 10px;font-weight:900;flex:none}
 .addph svg{width:18px;height:18px}
+.netbanner{position:fixed;left:0;right:0;top:calc(60px + var(--top));z-index:11;background:var(--brown);color:#fff;font-size:13px;font-weight:700;text-align:center;padding:6px 12px}
+.pending{background:var(--coral-soft);color:#b5462f;font-weight:700;font-size:14px;border-radius:12px;padding:10px 14px;margin-top:10px}
 .sublabel{font-size:13px;font-weight:700;color:var(--muted);margin:16px 0 0}
 .brandfoot{text-align:center;margin-top:26px}
 .brandfoot img{height:34px;opacity:.9}
@@ -180,6 +182,21 @@ const CLE = "proxipause-pannes";                           // doit être identiq
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}};
+/* ---------- stockage hors ligne (IndexedDB : beaucoup plus de place pour les photos) ---------- */
+const big=(function(){let db=null;const mem={};
+  function open(){return new Promise(res=>{try{const q=indexedDB.open("proxitechdev",1);q.onupgradeneeded=()=>q.result.createObjectStore("kv");q.onsuccess=()=>{db=q.result;res()};q.onerror=()=>res()}catch(e){res()}})}
+  function put(k,v){return new Promise(res=>{try{const t=db.transaction("kv","readwrite");t.objectStore("kv").put(v,k);t.oncomplete=()=>res(true);t.onerror=t.onabort=()=>res(false)}catch(e){res(false)}})}
+  function read(k){return new Promise(res=>{try{const t=db.transaction("kv").objectStore("kv").get(k);t.onsuccess=()=>res(t.result);t.onerror=()=>res(undefined)}catch(e){res(undefined)}})}
+  async function init(keys){await open();
+    if(db&&navigator.storage&&navigator.storage.persist){try{navigator.storage.persist()}catch(e){}}
+    for(const k of keys){let v=db?await read(k):undefined;
+      if(v===undefined){v=store.get(k,undefined);if(v!==undefined&&db&&await put(k,v)){try{localStorage.removeItem(k)}catch(e){}}}
+      mem[k]=v}}
+  const copy=v=>v===undefined?v:JSON.parse(JSON.stringify(v));
+  return{init,get(k,d){return mem[k]===undefined?d:copy(mem[k])},
+    set(k,v){mem[k]=copy(v);if(db){put(k,mem[k]).then(ok=>{if(!ok)toast("Mémoire du téléphone pleine : envoyez une fiche ou retirez une photo.")});return true}return store.set(k,v)}};
+})();
+
 
 /* ---------- icônes ---------- */
 const I={
@@ -213,13 +230,12 @@ const STEPS=[
 ];
 
 let view="home",idx=0,returnToRecap=false;
-let drafts=store.get("ptd_drafts",{});
-(function(){const old=store.get("ptd_draft",null);if(old){old.did=old.did||"d"+Date.now().toString(36);drafts[old.did]=old;store.set("ptd_drafts",drafts);try{localStorage.removeItem("ptd_draft")}catch(e){}}})();
+let drafts={};
 let f=blank();
 function blank(){return{did:"d"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),type:"",marque:"",modele:"",titre:"",symptome:"",code:"",diagnostic:"",cause:"",solution:"",astuce:"",pieces:"",temps:"",difficulte:"",securite:"",photosAvant:[],photosApres:[]}}
-Object.values(drafts).forEach(d=>{if(d.photos){d.photosAvant=d.photosAvant||d.photos;delete d.photos}d.photosAvant=d.photosAvant||[];d.photosApres=d.photosApres||[]});
-function saveDraft(){if(hasContent(f))drafts[f.did]=f;else delete drafts[f.did];if(!store.set("ptd_drafts",drafts))toast("Mémoire du téléphone pleine : envoyez une fiche ou retirez une photo.")}
-function clearDraft(){delete drafts[f.did];store.set("ptd_drafts",drafts)}
+
+function saveDraft(){if(hasContent(f))drafts[f.did]=f;else delete drafts[f.did];big.set("ptd_drafts",drafts)}
+function clearDraft(){delete drafts[f.did];big.set("ptd_drafts",drafts)}
 function hasContent(d){return !!(d.type||d.marque||d.titre||d.symptome||d.photosAvant.length)}
 function hasDraft(){return hasContent(f)}
 
@@ -279,6 +295,7 @@ function renderHome(app){
   const list=Object.values(drafts).filter(hasContent).sort((a,b)=>a.did<b.did?1:-1);
   app.innerHTML='<section class="screen">'+
    '<p class="hello">Bonjour '+esc(prenom)+'</p>'+
+   (big.get("ptd_queue",[]).length?'<div class="pending">'+big.get("ptd_queue",[]).length+' envoi(s) en attente de réseau. Ils partiront automatiquement.</div>':'')+
    '<div class="hero"><h2>Nouvelle panne ?</h2><p>Arrivé sur place, commencez par la photo. Vous complèterez la fiche une fois la panne réparée.</p>'+
    '<button id="startBtn">'+I.plus+'Déclarer une nouvelle panne</button></div>'+
    (list.length?'<div class="listtitle">Fiches en cours <small>'+list.length+'</small></div>'+list.map(d=>'<div class="draft">'+
@@ -298,7 +315,7 @@ function renderHome(app){
   chrome({});
   $("startBtn").onclick=()=>{f=blank();idx=0;returnToRecap=false;view="form";render()};
   app.querySelectorAll("[data-resume]").forEach(b=>b.onclick=()=>{f=drafts[b.dataset.resume];idx=firstIncomplete();returnToRecap=false;view="form";render()});
-  app.querySelectorAll("[data-drop]").forEach(b=>b.onclick=()=>{if(b.dataset.sure){delete drafts[b.dataset.drop];store.set("ptd_drafts",drafts);render();toast("Fiche supprimée.")}
+  app.querySelectorAll("[data-drop]").forEach(b=>b.onclick=()=>{if(b.dataset.sure){delete drafts[b.dataset.drop];big.set("ptd_drafts",drafts);render();toast("Fiche supprimée.")}
     else{b.dataset.sure="1";b.textContent="Toucher à nouveau pour confirmer"}});
   $("renameBtn").onclick=()=>{view="name";render()};
   if($("histSearch")){$("histSearch").oninput=e=>{histQuery=e.target.value;renderHist()}}
@@ -337,14 +354,14 @@ async function sendAdd(x){
   const photos=addPhotos.map((d,i)=>({name:"ajout_"+stamp+"_"+(i+1)+".jpg",data:d}));
   const btn=$("mainBtn");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Envoi…';
   // fiche encore en attente sur le téléphone : on ajoute les photos directement dedans
-  const q=store.get("ptd_queue",[]);const pending=q.find(y=>y.uid===x.uid&&!y.action);
+  const q=big.get("ptd_queue",[]);const pending=q.find(y=>y.uid===x.uid&&!y.action);
   const done=(msg)=>{bumpPhotos(x.uid,photos.length);addPhotos=[];view="home";render();toast(msg)};
-  if(pending){pending.photos=(pending.photos||[]).concat(photos);if(store.set("ptd_queue",q))return done("Photos ajoutées. Elles partiront avec la fiche.");}
-  const payload={action:"ajout_photos",cle:CLE,uid:x.uid,technicien:store.get("ptd_nom",""),titre:x.titre,machine:x.machine,photos};
+  if(pending){pending.photos=(pending.photos||[]).concat(photos);if(big.set("ptd_queue",q))return done("Photos ajoutées. Elles partiront avec la fiche.");}
+  const payload={action:"ajout_photos",cle:CLE,date:new Date().toISOString(),uid:x.uid,technicien:store.get("ptd_nom",""),titre:x.titre,machine:x.machine,photos};
   if(ADRESSE_SCRIPT.indexOf("http")!==0){btn.disabled=false;btn.textContent="Envoyer";$("sendErr").textContent="L'appli n'est pas encore reliée au script Google.";show($("sendErr"),true);return}
   try{await post(payload);done("Photos ajoutées à la fiche.")}
   catch(e){
-    if(!navigator.onLine||e instanceof TypeError){q.push(payload);if(store.set("ptd_queue",q))return done("Pas de réseau : les photos partiront dès que possible.")}
+    if(!navigator.onLine||e instanceof TypeError){q.push(payload);if(big.set("ptd_queue",q))return done("Pas de réseau : les photos partiront dès que possible.")}
     btn.disabled=false;btn.textContent="Réessayer";$("sendErr").textContent=String(e.message||"").indexOf("introuvable")>=0?"Cette fiche n'a pas été retrouvée sur le serveur.":"L'envoi n'a pas marché. Réessayez dans un instant.";show($("sendErr"),true)}
 }
 function bumpPhotos(uid,n){const h=store.get("ptd_hist",[]);h.forEach(y=>{if(y.uid===uid)y.nbPhotos=(y.nbPhotos||0)+n});store.set("ptd_hist",h)}
@@ -447,10 +464,13 @@ async function post(fiche){
 function addHist(fiche,statut){const h=store.get("ptd_hist",[]);h.push({uid:fiche.uid,titre:fiche.titre,machine:fiche.marque+" "+fiche.modele,type:fiche.type,date:fiche.date,statut,
   symptome:String(fiche.symptome||"").slice(0,200),nbPhotos:(fiche.photos||[]).length});store.set("ptd_hist",h.slice(-200))}
 function markSent(uid){const h=store.get("ptd_hist",[]);h.forEach(x=>{if(x.uid===uid)x.statut="envoyee"});store.set("ptd_hist",h)}
+let flushing=false;
 async function flush(){
-  const q=store.get("ptd_queue",[]);if(!q.length||!navigator.onLine||ADRESSE_SCRIPT.indexOf("http")!==0)return;const rest=[];
-  for(const x of q){try{await post(x);if(!x.action)markSent(x.uid)}catch(e){rest.push(x)}}
-  store.set("ptd_queue",rest);if(q.length>rest.length){toast((q.length-rest.length)+" fiche(s) en attente envoyée(s).");if(view==="home")render()}
+  if(flushing||ADRESSE_SCRIPT.indexOf("http")!==0)return;const q=big.get("ptd_queue",[]);if(!q.length)return;
+  flushing=true;const sent=[];
+  for(const x of q){try{await post(x);sent.push(x.uid+"|"+(x.action||"")+"|"+(x.date||""));if(!x.action)markSent(x.uid)}catch(e){if(e instanceof TypeError)break}}
+  const rest=big.get("ptd_queue",[]).filter(x=>!sent.includes(x.uid+"|"+(x.action||"")+"|"+(x.date||"")));big.set("ptd_queue",rest);flushing=false;
+  if(sent.length){toast(sent.length+" envoi(s) en attente parti(s).");if(view==="home")render()}
 }
 let lastSendOffline=false;
 async function send(){
@@ -462,8 +482,8 @@ async function send(){
   const btn=$("mainBtn");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Envoi…';
   try{await post(fiche);addHist(fiche,"envoyee");lastSendOffline=false;finish()}
   catch(e){
-    if(!navigator.onLine||e instanceof TypeError){const q=store.get("ptd_queue",[]);q.push(fiche);
-      if(store.set("ptd_queue",q)){addHist(fiche,"attente");lastSendOffline=true;finish()}
+    if(!navigator.onLine||e instanceof TypeError){const q=big.get("ptd_queue",[]);q.push(fiche);
+      if(big.set("ptd_queue",q)){addHist(fiche,"attente");lastSendOffline=true;finish()}
       else{errEl.textContent="Pas de réseau, et trop de photos pour garder la fiche sur le téléphone. Retirez une photo ou réessayez plus tard.";show(errEl,true)}}
     else{errEl.textContent="L'envoi n'a pas marché. Réessayez dans un instant.";show(errEl,true)}
     btn.disabled=false;btn.innerHTML="Envoyer la fiche";
@@ -479,9 +499,20 @@ function renderDone(app){
 }
 
 /* ---------- démarrage ---------- */
-view=store.get("ptd_nom","")?"home":"name";
-render();
-window.addEventListener("online",flush);flush();
+(async()=>{
+  await big.init(["ptd_drafts","ptd_queue"]);
+  drafts=big.get("ptd_drafts",{});
+  const old=store.get("ptd_draft",null);if(old){old.did=old.did||"d"+Date.now().toString(36);drafts[old.did]=old;try{localStorage.removeItem("ptd_draft")}catch(e){}}
+  Object.values(drafts).forEach(d=>{if(d.photos){d.photosAvant=d.photosAvant||d.photos;delete d.photos}d.photosAvant=d.photosAvant||[];d.photosApres=d.photosApres||[]});
+  big.set("ptd_drafts",drafts);
+  view=store.get("ptd_nom","")?"home":"name";render();flush();
+})();
+window.addEventListener("online",()=>{netBanner();flush()});window.addEventListener("offline",netBanner);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)flush()});
+setInterval(()=>{if(big.get("ptd_queue",[]).length)flush()},60000);
+function netBanner(){let b=document.getElementById("netBanner");if(!b){b=document.createElement("div");b.id="netBanner";b.className="netbanner";document.body.appendChild(b)}
+  b.textContent="Hors ligne : vous pouvez continuer, vos fiches partiront au retour du réseau.";b.classList.toggle("hidden",navigator.onLine)}
+netBanner();
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 })();
 </script>
